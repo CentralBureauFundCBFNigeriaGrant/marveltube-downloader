@@ -3,7 +3,6 @@ from fastapi.responses import FileResponse
 import subprocess
 import os
 import uuid
-import shutil
 
 app = FastAPI(title="MarvelTube Downloader")
 
@@ -12,17 +11,17 @@ def root():
     return {"status": "alive", "service": "MarvelTube Downloader"}
 
 @app.get("/download")
-async def download_video(url: str = Query(..., description="YouTube video URL")):
+async def download_video(
+    url: str = Query(..., description="YouTube video URL"),
+    user_ip: str = Query("", description="User's real IP address")
+):
     """
-    Downloads a YouTube video and returns the MP4 file.
-    The caller is responsible for deleting the file after use.
+    Downloads a YouTube video using the user's IP as the source address.
     """
-    # Create a unique filename
     job_id = str(uuid.uuid4())[:8]
     output_template = f"/tmp/{job_id}.%(ext)s"
     
     try:
-        # Download the video using yt-dlp
         cmd = [
             'yt-dlp',
             '-f', 'best[height<=1920]',
@@ -33,11 +32,21 @@ async def download_video(url: str = Query(..., description="YouTube video URL"))
             '--retries', '3',
             url
         ]
+        
+        # If a user IP is provided, add it as a custom header
+        # This makes the request appear to come from the user's IP
+        if user_ip:
+            cmd.extend([
+                '--add-header', f'X-Forwarded-For:{user_ip}',
+                '--add-header', f'X-Real-IP:{user_ip}',
+                '--add-header', f'Client-IP:{user_ip}',
+            ])
+        
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         
         if result.returncode != 0:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail=f"Download failed: {result.stderr[:500]}"
             )
         
@@ -51,12 +60,10 @@ async def download_video(url: str = Query(..., description="YouTube video URL"))
         if not downloaded_file:
             raise HTTPException(status_code=500, detail="File not found after download")
         
-        # Return the file
         return FileResponse(
             downloaded_file,
             media_type="video/mp4",
-            filename=f"marveltube_{job_id}.mp4",
-            background=None  # File will be cleaned up after response
+            filename=f"marveltube_{job_id}.mp4"
         )
     
     except HTTPException:
