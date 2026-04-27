@@ -4,7 +4,6 @@ import subprocess
 import os
 import uuid
 import time
-import json
 from datetime import datetime
 
 app = FastAPI(title="MarvelTube Downloader")
@@ -46,7 +45,7 @@ async def next_job():
 @app.post("/complete-job")
 async def complete_job(
     job_id: str = Query(..., description="Job ID"),
-    supabase_url: str = Query(..., description="Supabase URL of uploaded video")
+    supabase_url: str = Query(..., description="URL of uploaded video")
 ):
     job = jobs.get(job_id)
     if not job:
@@ -56,6 +55,43 @@ async def complete_job(
     job['completed_at'] = datetime.now().isoformat()
     print(f"Job {job_id} completed: {supabase_url}")
     return {"status": "ok"}
+
+@app.get("/download")
+async def download_video(url: str = Query(..., description="YouTube video URL")):
+    job_id = str(uuid.uuid4())[:8]
+    output_template = f"/tmp/{job_id}.%(ext)s"
+    
+    try:
+        cmd = [
+            'yt-dlp',
+            '-f', 'best[height<=1920]',
+            '-o', output_template,
+            '--no-playlist',
+            '--restrict-filenames',
+            '--socket-timeout', '30',
+            '--retries', '3',
+            url
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        
+        if result.returncode != 0:
+            raise HTTPException(status_code=400, detail=f"Download failed: {result.stderr[:500]}")
+        
+        downloaded_file = None
+        for f in os.listdir('/tmp'):
+            if f.startswith(job_id) and f.endswith(('.mp4', '.mov', '.webm')):
+                downloaded_file = f"/tmp/{f}"
+                break
+        
+        if not downloaded_file:
+            raise HTTPException(status_code=500, detail="File not found after download")
+        
+        return FileResponse(downloaded_file, media_type="video/mp4", filename=f"marveltube_{job_id}.mp4")
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 def health():
