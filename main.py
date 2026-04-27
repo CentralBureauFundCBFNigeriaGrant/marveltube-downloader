@@ -13,7 +13,7 @@ jobs = {}
 
 @app.get("/")
 def root():
-    return {"status": "alive", "service": "MarvelTube Downloader", "jobs_pending": len([j for j in jobs.values() if j['status'] == 'pending'])}
+    return {"status": "alive", "service": "MarvelTube Downloader v2.0", "jobs_pending": len([j for j in jobs.values() if j['status'] == 'pending'])}
 
 @app.get("/submit-job")
 async def submit_job(url: str = Query(..., description="YouTube video URL")):
